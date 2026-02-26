@@ -1,0 +1,176 @@
+# Solar MVP-DSM Pipeline
+# Focused stack for Radiation Download, AWS Fetch, Interpolation, and Merging.
+
+networks:
+  weather-net:
+    driver: bridge
+
+volumes:
+  postgres-data-mvp:
+  airflow-logs-mvp:
+
+
+services:
+  # ============================================================
+  # Airflow Core: Database
+  # ============================================================
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres-solar-mvp
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data-mvp:/var/lib/postgresql/data
+    networks:
+      - weather-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U airflow" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # MLOps Stack: MLflow Tracking Server
+  # ============================================================
+  mlflow-db:
+    image: postgres:15
+    container_name: mlflow-postgres
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    networks:
+      - weather-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U mlflow" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mlflow-server:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    depends_on:
+      mlflow-db:
+        condition: service_healthy
+    environment:
+      - MLFLOW_TRACKING_URI=postgresql://mlflow:mlflow@mlflow-db/mlflow
+    command: >
+      mlflow server  --backend-store-uri postgresql://mlflow:mlflow@mlflow-db/mlflow  --default-artifact-root /opt/mlflow/artifacts --host 0.0.0.0
+    volumes:
+      - ./mlflow_artifacts:/opt/mlflow/artifacts
+    networks:
+      - weather-net
+    restart: unless-stopped
+
+  #Initialization: Fix permissions for mounted volumes
+  init-dirs:
+    image: python:3.10-slim
+    user: "root"
+    volumes:
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+      - ./results:/opt/airflow/results
+      - airflow-logs-mvp:/opt/airflow/logs
+    entrypoint: >
+      /bin/bash -c "  mkdir -p /opt/airflow/data /opt/airflow/models /opt/airflow/results;  chown -R ${AIRFLOW_UID:-50000}:0 /opt/airflow/data /opt/airflow/logs /opt/airflow/models /opt/airflow/results;  chmod -R 775 /opt/airflow/data /opt/airflow/logs /opt/airflow/models /opt/airflow/results;  echo 'Permissions fixed';  "
+    networks:
+      - weather-net
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: solar-mvp/airflow:latest
+    user: "${AIRFLOW_UID:-50000}:0"
+    container_name: airflow-init-solar-mvp
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      init-dirs:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_PASSWORD:-admin}
+    command: version
+    networks:
+      - weather-net
+
+  airflow-webserver:
+    image: solar-mvp/airflow:latest
+    user: "${AIRFLOW_UID:-50000}:0"
+    container_name: airflow-webserver-solar-mvp
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-solar-secret}
+      MLFLOW_TRACKING_URI: http://mlflow-server:5000
+    volumes:
+      # Core Folders
+      - ./dags:/opt/airflow/dags
+      - ./extractors_new:/opt/airflow/extractors_new
+      - ./AWS-Data:/opt/airflow/AWS-Data
+      - ./temporal_interpolation:/opt/airflow/temporal_interpolation
+      - ./utils:/opt/airflow/utils
+      - ./downscaling:/opt/airflow/downscaling
+      - ./src:/opt/airflow/src
+
+      # Data & Config
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+      - ./results:/opt/airflow/results
+      - airflow-logs-mvp:/opt/airflow/logs
+      - ./config.yaml:/opt/airflow/config.yaml
+
+    command: webserver
+    networks:
+      - weather-net
+    restart: unless-stopped
+
+  airflow-scheduler:
+    image: solar-mvp/airflow:latest
+    user: "${AIRFLOW_UID:-50000}:0"
+    container_name: airflow-scheduler-solar-mvp
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-solar-secret}
+      MLFLOW_TRACKING_URI: http://mlflow-server:5000
+    volumes:
+      # Core Folders
+      - ./dags:/opt/airflow/dags
+      - ./extractors_new:/opt/airflow/extractors_new
+      - ./AWS-Data:/opt/airflow/AWS-Data
+      - ./temporal_interpolation:/opt/airflow/temporal_interpolation
+      - ./utils:/opt/airflow/utils
+      - ./downscaling:/opt/airflow/downscaling
+      - ./src:/opt/airflow/src
+
+      # Data & Config
+      - ./data:/opt/airflow/data
+      - ./models:/opt/airflow/models
+      - ./results:/opt/airflow/results
+      - airflow-logs-mvp:/opt/airflow/logs
+      - ./config.yaml:/opt/airflow/config.yaml
+
+    command: scheduler
+    networks:
+      - weather-net
+    restart: unless-stopped

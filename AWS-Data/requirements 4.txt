@@ -1,0 +1,10 @@
+flask
+requests
+beautifulsoup4
+pandas
+numpy
+xarray
+netCDF4
+meteostat
+scikit-learn
+scipy

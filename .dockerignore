@@ -1,0 +1,10 @@
+Prithvi-WxC/data
+data
+airflow-logs
+prithvi_env_container
+airflow-db
+AWS-Data
+.env
+.git
+__pycache__
+*.pyc

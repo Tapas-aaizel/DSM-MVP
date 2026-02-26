@@ -1,0 +1,35 @@
+# MLflow
+mlflow_artifacts/
+mlruns/
+mlflow.db
+
+# Training Data (Large CSVs)
+training_data/*.csv
+!training_data/.gitkeep
+
+# Data & Results
+data/
+results/
+models/
+5year/
+.dvc/
+!.dvc/config
+!.dvc/.dvcignore
+!.dvc/plots/
+
+# Local Reports
+training/reports/
+training/models/
+
+# Virtual Environments
+venv/
+.env
+.venv/
+env/
+
+# Python logs/cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+*.tar.bz2

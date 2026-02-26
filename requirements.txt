@@ -1,0 +1,16 @@
+numpy
+xarray
+pandas
+requests
+beautifulsoup4
+scikit-learn
+netCDF4
+reverse_geocoder
+pvlib
+xgboost
+scipy
+matplotlib
+mlflow
+dvc
+evidently
+psycopg2-binary

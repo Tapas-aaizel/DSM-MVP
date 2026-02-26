@@ -1,0 +1,24 @@
+project:
+  name: "Solar-MVP-DSM-v1"
+  base_dir: "/opt/airflow"  # Path inside Docker container
+
+paths:
+  data_dir: "/opt/airflow/data"
+  weights: "/opt/airflow/weights/prithvi.wxc.rollout.2300m.v1.pt"
+  climatology: "/opt/airflow/Prithvi-WxC/climatology"
+  inference_output: "/opt/airflow/data/global-pred"
+  downscale_output: "/opt/airflow/data/downscaling_result"
+  terrain_output: "/opt/airflow/data/terrain_aware_result"
+  aws_ground_truth: "/opt/airflow/data/AWS_data"
+  dem_file: "/opt/airflow/downscaling/GMTED2010_15n030_00625deg.nc"
+
+model:
+  rollout_steps: 4        # 4 steps * 6 hours = 24 hours (1 Day)
+  smoothing_sigma: 1.0     # For output smoothing
+  device: "cuda"           # 'cuda' or 'cpu'
+  precision: "half"        # 'half' (fp16) or 'full' (fp32)
+
+downscaling:
+  resolution_km: 1
+  variables: ["T2M", "U10M", "V10M", "QV2M"]
+  use_bias_correction: true
