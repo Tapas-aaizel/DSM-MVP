@@ -1,6 +1,7 @@
 import os
 import json
 import yaml
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -30,12 +31,17 @@ from evidently.tests import (
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR    = os.path.join(os.path.dirname(BASE_DIR), "training_data")
 MODELS_DIR  = os.path.join(BASE_DIR, "models")
-REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+
+# Create a unique, timestamped reports directory for each script execution
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+REPORTS_DIR = os.path.join(BASE_DIR, "reports", f"run_{RUN_TIMESTAMP}")
 
 os.makedirs(MODELS_DIR,  exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 MLFLOW_TRACKING_URI   = "http://localhost:5000"
+# Tell MLflow library to explicitly use HTTP proxy to upload artifacts, overriding local disk fallbacks.
+os.environ["MLFLOW_TRACKING_URI"] = "http://localhost:5000"
 MLFLOW_EXPERIMENT     = "Solar_MVP_Training"
 REGISTERED_MODEL_NAME = "Bhadla_Solar_Residual"
 CAPACITY_MW           = 50.0
@@ -107,31 +113,38 @@ def log_reproducibility_metadata(params: dict, features: list,
 
 
 # ----------------------------------------------------------
-# 3. BIAS EVALUATION REPORT
+# 3. BIAS EVALUATION REPORT (FAIRNESS)
 # ----------------------------------------------------------
 def run_bias_evaluation(train_df: pd.DataFrame,
                          test_df: pd.DataFrame) -> str:
     """
-    Generate a regression bias report using Evidently.
-    The report compares the XGBoost-corrected forecast against actuals
-    and is saved as HTML before any model is registered.
+    Generate a fairness bias report using Fairlearn.
+    Evaluates MAE bias across different hours of the day
+    and saves it as a report before any model is registered.
     """
-    ref = pd.DataFrame({
-        "target":     train_df["actual_mw"].values,
-        "prediction": train_df["pvlib_predicted_mw"].values,
-    })
-    cur = pd.DataFrame({
-        "target":     test_df["actual_mw"].values,
-        "prediction": test_df["corrected_mw"].values,
-    })
+    from fairlearn.metrics import MetricFrame
+    from sklearn.metrics import mean_absolute_error
 
-    report = Report(metrics=[RegressionPreset()])
-    report.run(reference_data=ref, current_data=cur)
+    y_true = test_df["actual_mw"].values
+    y_pred = test_df["corrected_mw"].values
+    sensitive_feature = test_df["hour_of_day"].values
 
-    path = os.path.join(REPORTS_DIR, "bias_evaluation.html")
-    report.save_html(path)
+    mf = MetricFrame(
+        metrics=mean_absolute_error,
+        y_true=y_true,
+        y_pred=y_pred,
+        sensitive_features=sensitive_feature
+    )
+
+    path = os.path.join(REPORTS_DIR, "fairlearn_bias_evaluation.csv")
+    bias_df = mf.by_group.to_frame(name="mean_absolute_error")
+    bias_df.index.name = "hour_of_day"
+    bias_df.to_csv(path)
+    
     mlflow.log_artifact(path, "reports")
-    print(f"Bias evaluation report saved: {path}")
+    mlflow.log_metric("mae_fairness_diff", float(mf.difference()))
+    
+    print(f"Fairlearn bias evaluation report saved: {path}")
     return path
 
 

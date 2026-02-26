@@ -60,7 +60,7 @@ services:
     environment:
       - MLFLOW_TRACKING_URI=postgresql://mlflow:mlflow@mlflow-db/mlflow
     command: >
-      mlflow server  --backend-store-uri postgresql://mlflow:mlflow@mlflow-db/mlflow  --default-artifact-root /opt/mlflow/artifacts --host 0.0.0.0
+      mlflow server  --backend-store-uri postgresql://mlflow:mlflow@mlflow-db/mlflow  --default-artifact-root mlflow-artifacts:/ --artifacts-destination /opt/mlflow/artifacts --host 0.0.0.0 --serve-artifacts
     volumes:
       - ./mlflow_artifacts:/opt/mlflow/artifacts
     networks:

@@ -13,4 +13,5 @@ matplotlib
 mlflow
 dvc
 evidently
+fairlearn
 psycopg2-binary
